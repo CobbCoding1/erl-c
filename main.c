@@ -156,10 +156,38 @@ int main(void) {
     int attr_size = align_by_four(decode_big_endian(attr_size_buf, sizeof(word)));
     fread(&nothing, sizeof(byte) * attr_size, 1, file);
 
+    char *cinf = malloc(sizeof(word));
+    byte cinf_size_buf[sizeof(word)];
+    fread(cinf, sizeof(word), 1, file);
+    fread(cinf_size_buf, sizeof(word), 1, file);
+    int cinf_size = align_by_four(decode_big_endian(cinf_size_buf, sizeof(word)));
+    fread(&nothing, sizeof(byte) * cinf_size, 1, file);
+
+    char *debug = malloc(sizeof(word));
+    byte debug_size_buf[sizeof(word)];
+    fread(debug, sizeof(word), 1, file);
+    fread(debug_size_buf, sizeof(word), 1, file);
+    int debug_size = align_by_four(decode_big_endian(debug_size_buf, sizeof(word)));
+    fread(&nothing, sizeof(byte) * debug_size, 1, file);
+
+    char *line = malloc(sizeof(word));
+    byte line_size_buf[sizeof(word)];
+    fread(line, sizeof(word), 1, file);
+    fread(line_size_buf, sizeof(word), 1, file);
+    int line_size = align_by_four(decode_big_endian(line_size_buf, sizeof(word)));
+    fread(&nothing, sizeof(byte) * line_size, 1, file);
+    printf("%d\n", line_size);
+
+    char *type = malloc(sizeof(word));
+    byte type_size_buf[sizeof(word)];
+    fread(type, sizeof(word), 1, file);
+    fread(type_size_buf, sizeof(word), 1, file);
+    int type_size = align_by_four(decode_big_endian(type_size_buf, sizeof(word)));
+    fread(&nothing, sizeof(byte) * type_size, 1, file);
+
     char *header = malloc(sizeof(word));
     fread(header, sizeof(word), 1, file);
-    printf("%s\n", header);
-    
+
     fclose(file);
     return 0;
 }
