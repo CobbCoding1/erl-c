@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+#include "view.c"
+
 typedef uint32_t word;
 typedef uint8_t byte;
 
@@ -64,6 +66,34 @@ int align_by_four(int n) {
 }
 
 int main(void) {
+    FILE *file = fopen("hello.erc", "rb");
+    if(file == NULL) assert(0);
+    
+    fseek(file, 0, SEEK_END);
+    int length = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char *buf = malloc(sizeof(char) * length);
+    fread(buf, length, 1, file);
+    fclose(file);
+    buf[length] = '\0';
+
+    String_View contents = view_create(buf, length);
+    #define ARR_S 128
+    String_View arr[ARR_S];
+
+
+    int arr_len = view_split_whitespace(contents, arr, ARR_S) - 1;
+
+    assert(arr_len % 3 == 0 && "Incorrect syntax\n");
+
+    for(size_t i = 0; i < arr_len; i++) {
+        printf(View_Print"\n", View_Arg(arr[i]));
+    }
+
+}
+
+int old_main(void) {
     FILE *file = fopen("hello.beam", "rb");
     if(file == NULL) assert(0);
 
