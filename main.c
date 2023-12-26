@@ -38,6 +38,18 @@ typedef struct {
     byte arity[sizeof(word)];
 } Import;
 
+typedef struct {
+    byte function_name[sizeof(word)];
+    byte arity[sizeof(word)];
+    byte label[sizeof(word)];
+} Export;
+
+typedef struct {
+    char name[sizeof(word)];
+    byte size_buf[sizeof(word)];
+    byte count_buf[sizeof(word)];
+} Function_Header;
+
 int decode_big_endian(byte *buf, size_t buf_s) {
     size_t shift_index = 0;
     int size = 0;
@@ -81,8 +93,6 @@ int main(void) {
     int code_chunk_size = align_by_four(decode_big_endian(code_header.size_buf, sizeof(word)));
     int code_sub_size = decode_big_endian(code_header.sub_size_buf, sizeof(word));
     int code_size = code_chunk_size - code_sub_size;
-    printf("%d %d\n", code_chunk_size, code_sub_size);
-    printf("%d\n", code_size);
     byte code[code_size];
     fread(code, sizeof(byte) * code_size, 1, file);
 
@@ -91,24 +101,65 @@ int main(void) {
     fread(str_t_name, sizeof(word), 1, file);
     fread(str_t_size_buf, sizeof(word), 1, file);
 
-    char *imp_t_name = malloc(sizeof(word));
-    byte imp_t_size_buf[sizeof(word)];
-    byte imp_t_count_buf[sizeof(word)];
-    fread(imp_t_name, sizeof(word), 1, file);
-    fread(imp_t_size_buf, sizeof(word), 1, file);
+    Function_Header imp_t_header = {0};
+    fread(&imp_t_header, sizeof(Function_Header), 1, file);
     size_t count = 0;
-    fread(imp_t_count_buf, sizeof(word), 1, file);
     count += 4;
-    size_t imp_count = decode_big_endian(imp_t_count_buf, sizeof(word));
+    size_t imp_count = decode_big_endian(imp_t_header.count_buf, sizeof(word));
     Import imports[imp_count];
     for(size_t i = 0; i < imp_count; i++) {
         fread(&imports[i], sizeof(Import), 1, file);
         count += sizeof(Import);
     }
 
-    int diff = align_by_four(decode_big_endian(imp_t_size_buf, sizeof(word)) - count);
+    int diff = align_by_four(decode_big_endian(imp_t_header.size_buf, sizeof(word)) - count);
     fread(&nothing, sizeof(byte) * diff, 1, file);
 
+    Function_Header exp_t_header = {0};
+    fread(&exp_t_header, sizeof(Function_Header), 1, file);
+    count = 4;
+    size_t exp_count = decode_big_endian(exp_t_header.count_buf, sizeof(word));
+    Export exports[exp_count];
+    for(size_t i = 0; i < exp_count; i++) {
+        fread(&exports[i], sizeof(Export), 1, file);
+        count += sizeof(Export);
+    }
+
+    diff = align_by_four(decode_big_endian(exp_t_header.size_buf, sizeof(word)) - count);
+    fread(&nothing, sizeof(byte) * diff, 1, file);
+
+    char *buf = malloc(sizeof(word));
+    byte size_buf[sizeof(word)];
+    fread(buf, sizeof(word), 1, file);
+    fread(size_buf, sizeof(word), 1, file);
+    fread(&nothing, sizeof(byte) * decode_big_endian(size_buf, sizeof(word)), 1, file);
+
+
+    Function_Header loc_t_header = {0};
+    fread(&loc_t_header, sizeof(Function_Header), 1, file);
+
+    count = 4;
+    size_t loc_count = decode_big_endian(loc_t_header.count_buf, sizeof(word));
+    Export locs[loc_count];
+    for(size_t i = 0; i < loc_count; i++) {
+        fread(&locs[i], sizeof(Export), 1, file);
+        count += sizeof(Export);
+    }
+
+    diff = align_by_four(decode_big_endian(loc_t_header.size_buf, sizeof(word)) - count);
+    fread(&nothing, sizeof(byte) * diff, 1, file);
+
+    char *attr = malloc(sizeof(word));
+    byte attr_size_buf[sizeof(word)];
+    fread(attr, sizeof(word), 1, file);
+    fread(attr_size_buf, sizeof(word), 1, file);
+    int attr_size = align_by_four(decode_big_endian(attr_size_buf, sizeof(word)));
+    fread(&nothing, sizeof(byte) * attr_size, 1, file);
+
+    char *header = malloc(sizeof(word));
+    fread(header, sizeof(word), 1, file);
+    printf("%s\n", header);
+    
     fclose(file);
     return 0;
 }
