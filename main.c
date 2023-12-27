@@ -61,8 +61,87 @@ int decode_big_endian(byte *buf, size_t buf_s) {
     return size;
 }
 
+byte *encode_big_endian(int n) {
+    byte *buf = malloc(sizeof(word));
+    for(size_t i = 0; i < sizeof(word); i++) {
+        buf[i] = (byte)((n >> (8 * (sizeof(word) - 1 - i))) & 0xFF);
+    }
+    return buf;
+}
+
 int align_by_four(int n) {
     return 4 * ((n + 3)/4);
+}
+
+void generate_bytecode(String_View *arr, size_t arr_s) {
+    (void)arr;
+    (void)arr_s;
+    FILE *file = fopen("test.beam", "wb");
+    if(file == NULL) assert(0);
+
+    File_Header f_header = {
+        .ifheader = "FOR1",
+        .formtype = "BEAM",
+    };
+
+    memcpy(f_header.size_buf, encode_big_endian(80), sizeof(word));
+    fwrite(&f_header, sizeof(File_Header), 1, file);
+
+    Block_Header atom_header = {
+        .name = "AtU8",
+    };
+
+    byte num_of_atoms[sizeof(word)];
+    memcpy(atom_header.size_buf, encode_big_endian(sizeof(word) * 2), sizeof(word));
+    memcpy(atom_header.sub_size_buf, encode_big_endian(sizeof(word)), sizeof(word));
+    memcpy(num_of_atoms, encode_big_endian(0), sizeof(word));
+
+    fwrite(&atom_header, sizeof(Block_Header), 1, file);
+    fwrite(num_of_atoms, sizeof(word), 1, file);
+
+    Block_Header code_header = {
+        .name = "Code",
+    };
+
+    memcpy(code_header.size_buf, encode_big_endian(align_by_four(20)), sizeof(word));
+    memcpy(code_header.sub_size_buf, encode_big_endian(16), sizeof(word));
+
+    fwrite(&code_header, sizeof(Block_Header), 1, file);
+
+    Code_Body code_body;
+
+    byte inst_count[sizeof(word)]; 
+    memcpy(inst_count, encode_big_endian(0), sizeof(word));
+    memcpy(code_body.opcode_max, encode_big_endian(0), sizeof(word));
+    memcpy(code_body.label_count, encode_big_endian(0), sizeof(word));
+    memcpy(code_body.function_count, encode_big_endian(0), sizeof(word));
+
+    fwrite(inst_count, sizeof(word), 1, file);
+    fwrite(&code_body, sizeof(Code_Body), 1, file);
+
+
+    fwrite("StrT", sizeof(word), 1, file);
+    fwrite(encode_big_endian(0), sizeof(word), 1, file);
+
+    Block_Header imp_t_header = {
+        .name = "ImpT",
+    };
+
+    memcpy(imp_t_header.size_buf, encode_big_endian(sizeof(word)), sizeof(word));
+    memcpy(imp_t_header.sub_size_buf, encode_big_endian(0), sizeof(word));
+
+    fwrite(&imp_t_header, sizeof(Block_Header), 1, file);
+
+    Block_Header exp_t_header = {
+        .name = "ExpT",
+    };
+
+    memcpy(exp_t_header.size_buf, encode_big_endian(sizeof(word)), sizeof(word));
+    memcpy(exp_t_header.sub_size_buf, encode_big_endian(0), sizeof(word));
+
+    fwrite(&exp_t_header, sizeof(Block_Header), 1, file);
+
+    fclose(file);
 }
 
 int main(void) {
@@ -87,9 +166,11 @@ int main(void) {
 
     assert(arr_len % 3 == 0 && "Incorrect syntax\n");
 
-    for(size_t i = 0; i < arr_len; i++) {
+    for(size_t i = 0; (int)i < arr_len; i++) {
         printf(View_Print"\n", View_Arg(arr[i]));
     }
+
+    generate_bytecode(arr, arr_len);
 
 }
 
