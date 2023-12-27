@@ -87,7 +87,7 @@ byte encode(int tag, int n) {
     return 0;
 }
 
-#define FUNC_COUNT 1
+#define FUNC_COUNT 2
 void generate_bytecode(String_View *arr, size_t arr_s) {
     (void)arr;
     (void)arr_s;
@@ -142,8 +142,8 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
         .name = "Code",
     };
 
-    #define FUNC_SIZE 13
-    memcpy(code_header.size_buf, encode_big_endian(20 + (FUNC_COUNT * FUNC_SIZE)), sizeof(word));
+    #define FUNC_SIZE 12
+    memcpy(code_header.size_buf, encode_big_endian(21 + (FUNC_COUNT * FUNC_SIZE)), sizeof(word));
     memcpy(code_header.sub_size_buf, encode_big_endian(16), sizeof(word));
 
     fwrite(&code_header, sizeof(Block_Header), 1, file);
@@ -192,9 +192,14 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
 
         values = (byte)Return;
         fwrite(&values, sizeof(byte), 1, file);
-        value = encode(3, 0);
-        fwrite(&value, sizeof(byte), 1, file);
+        //value = encode(3, 0);
+        //fwrite(&value, sizeof(byte), 1, file);
+
+
     }
+
+    byte values = (byte)3;
+    fwrite(&values, sizeof(byte), 1, file);
 
     int post = ftell(file);
     printf("dif: %d\n", post-pre);
