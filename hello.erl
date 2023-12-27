@@ -1,4 +1,4 @@
 -module(hello).
--export([hello/0]).
+-export([hellof/0]).
 
-hello() -> 15.
+hellof() -> 15.

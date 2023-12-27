@@ -52,6 +52,13 @@ typedef struct {
     byte count_buf[sizeof(word)];
 } Function_Header;
 
+typedef enum {
+    Label = 1,
+    FuncInfo = 2,
+    Return = 19,
+    Move = 64,
+} Opcodes;
+
 int decode_big_endian(byte *buf, size_t buf_s) {
     size_t shift_index = 0;
     int size = 0;
@@ -73,6 +80,14 @@ int align_by_four(int n) {
     return 4 * ((n + 3)/4);
 }
 
+byte encode(int tag, int n) {
+    if(n < 16) {
+        return (byte)((n << 4)|tag);
+    }
+    return 0;
+}
+
+#define FUNC_COUNT 1
 void generate_bytecode(String_View *arr, size_t arr_s) {
     (void)arr;
     (void)arr_s;
@@ -84,40 +99,109 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
         .formtype = "BEAM",
     };
 
-    memcpy(f_header.size_buf, encode_big_endian(80), sizeof(word));
+    memcpy(f_header.size_buf, encode_big_endian(0), sizeof(word));
     fwrite(&f_header, sizeof(File_Header), 1, file);
 
     Block_Header atom_header = {
         .name = "AtU8",
     };
 
-    byte num_of_atoms[sizeof(word)];
-    memcpy(atom_header.size_buf, encode_big_endian(sizeof(word) * 2), sizeof(word));
-    memcpy(atom_header.sub_size_buf, encode_big_endian(sizeof(word)), sizeof(word));
-    memcpy(num_of_atoms, encode_big_endian(0), sizeof(word));
+    memcpy(atom_header.size_buf, encode_big_endian(9 + (6 * FUNC_COUNT)), sizeof(word));
+    memcpy(atom_header.sub_size_buf, encode_big_endian(1 + (FUNC_COUNT)), sizeof(word));
 
     fwrite(&atom_header, sizeof(Block_Header), 1, file);
-    fwrite(num_of_atoms, sizeof(word), 1, file);
+    int before = ftell(file) - 4;
+
+    char *atom_str = "test";
+    byte atom_len = (byte)strlen(atom_str);
+    fwrite(&atom_len, sizeof(byte), 1, file);
+    fwrite(atom_str, sizeof(byte) * atom_len, 1, file);
+
+    char *atoms[FUNC_COUNT] = {
+        "hello",
+        "hellf",
+        "hells",
+    };
+
+    for(size_t i = 0; i < FUNC_COUNT; i++) {
+        atom_str = atoms[i];
+        atom_len = (byte)strlen(atom_str);
+        fwrite(&atom_len, sizeof(byte), 1, file);
+        fwrite(atom_str, sizeof(byte) * atom_len, 1, file);
+    }
+
+    int after = ftell(file);
+    printf("- %d\n", after - before);
+
+    int atom_size = decode_big_endian(atom_header.size_buf, sizeof(word));
+    printf("%d, %d\n", atom_size, align_by_four(atom_size) - atom_size);
+    fwrite(encode_big_endian(0), align_by_four(atom_size) - atom_size, 1, file);
+
 
     Block_Header code_header = {
         .name = "Code",
     };
 
-    memcpy(code_header.size_buf, encode_big_endian(align_by_four(20)), sizeof(word));
+    #define FUNC_SIZE 13
+    memcpy(code_header.size_buf, encode_big_endian(20 + (FUNC_COUNT * FUNC_SIZE)), sizeof(word));
     memcpy(code_header.sub_size_buf, encode_big_endian(16), sizeof(word));
 
     fwrite(&code_header, sizeof(Block_Header), 1, file);
 
+    int pre = ftell(file) - 4;
+
     Code_Body code_body;
 
-    byte inst_count[sizeof(word)]; 
-    memcpy(inst_count, encode_big_endian(0), sizeof(word));
-    memcpy(code_body.opcode_max, encode_big_endian(0), sizeof(word));
-    memcpy(code_body.label_count, encode_big_endian(0), sizeof(word));
-    memcpy(code_body.function_count, encode_big_endian(0), sizeof(word));
+    byte inst_set[sizeof(word)]; 
+    memcpy(inst_set, encode_big_endian(0), sizeof(word));
+    memcpy(code_body.opcode_max, encode_big_endian(169), sizeof(word));
+    memcpy(code_body.label_count, encode_big_endian(1+(FUNC_COUNT * 2)), sizeof(word));
+    memcpy(code_body.function_count, encode_big_endian(FUNC_COUNT), sizeof(word));
 
-    fwrite(inst_count, sizeof(word), 1, file);
+    fwrite(inst_set, sizeof(word), 1, file);
     fwrite(&code_body, sizeof(Code_Body), 1, file);
+
+
+    int label_count = 1;
+    for(size_t i = 0; i < FUNC_COUNT; i++) {
+        byte values = (byte)Label;
+        fwrite(&values, sizeof(byte), 1, file);
+        byte value = encode(0, label_count++);
+        fwrite(&value, sizeof(byte), 1, file);
+
+        values = (byte)FuncInfo;
+        fwrite(&values, sizeof(byte), 1, file);
+        value = encode(2, 1);
+        fwrite(&value, sizeof(byte), 1, file);
+        value = encode(2, i+2);
+        fwrite(&value, sizeof(byte), 1, file);
+        value = encode(0, 0);
+        fwrite(&value, sizeof(byte), 1, file);
+
+        values = (byte)Label;
+        fwrite(&values, sizeof(byte), 1, file);
+        value = encode(0, label_count++);
+        fwrite(&value, sizeof(byte), 1, file);
+
+        values = (byte)Move;
+        fwrite(&values, sizeof(byte), 1, file);
+        value = encode(1, 14);
+        fwrite(&value, sizeof(byte), 1, file);
+        value = encode(3, 0);
+        fwrite(&value, sizeof(byte), 1, file);
+
+        values = (byte)Return;
+        fwrite(&values, sizeof(byte), 1, file);
+        value = encode(3, 0);
+        fwrite(&value, sizeof(byte), 1, file);
+    }
+
+    int post = ftell(file);
+    printf("dif: %d\n", post-pre);
+
+    int code_size = decode_big_endian(code_header.size_buf, sizeof(word));
+    printf("code size: %d, %d\n", code_size, align_by_four(code_size) - code_size);
+    fwrite(encode_big_endian(0), align_by_four(code_size)-code_size, 1, file);
 
 
     fwrite("StrT", sizeof(word), 1, file);
@@ -136,10 +220,27 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
         .name = "ExpT",
     };
 
-    memcpy(exp_t_header.size_buf, encode_big_endian(sizeof(word)), sizeof(word));
-    memcpy(exp_t_header.sub_size_buf, encode_big_endian(0), sizeof(word));
+    memcpy(exp_t_header.size_buf, encode_big_endian((sizeof(word) * 1) + ((sizeof(word)*3)*FUNC_COUNT)), sizeof(word));
+    memcpy(exp_t_header.sub_size_buf, encode_big_endian(FUNC_COUNT), sizeof(word));
 
     fwrite(&exp_t_header, sizeof(Block_Header), 1, file);
+
+    for(size_t i = 0; i < FUNC_COUNT; i++) {
+        fwrite(encode_big_endian(i+2), sizeof(word), 1, file);
+        fwrite(encode_big_endian(0), sizeof(word), 1, file);
+        fwrite(encode_big_endian((i+1)*2), sizeof(word), 1, file);
+    }
+
+    int export_size = decode_big_endian(exp_t_header.size_buf, sizeof(word));
+    printf("%d\n", export_size);
+    fwrite(encode_big_endian(0), align_by_four(export_size) - export_size, 1, file);
+
+    int flen = ftell(file);
+    printf("flen: %d\n", flen);
+    fseek(file, 0, SEEK_SET);
+
+    memcpy(f_header.size_buf, encode_big_endian(flen-8), sizeof(word));
+    fwrite(&f_header, sizeof(File_Header), 1, file);
 
     fclose(file);
 }
@@ -174,7 +275,7 @@ int main(void) {
 
 }
 
-int old_main(void) {
+int main2(void) {
     FILE *file = fopen("hello.beam", "rb");
     if(file == NULL) assert(0);
 
