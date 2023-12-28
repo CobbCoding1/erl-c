@@ -1,5 +1,4 @@
 main
 erl_crash.dump
-test.beam
-hello.beam
-hello.erl
+*.beam
+*.erl
