@@ -9,6 +9,11 @@ typedef uint32_t word;
 typedef uint8_t byte;
 
 typedef struct {
+    String_View name;
+    int value;
+} Function;
+
+typedef struct {
     char ifheader[sizeof(word)];
     byte size_buf[sizeof(word)];
     char formtype[sizeof(word)];
@@ -87,10 +92,8 @@ byte encode(int tag, int n) {
     return 0;
 }
 
-#define FUNC_COUNT 2
-void generate_bytecode(String_View *arr, size_t arr_s) {
-    (void)arr;
-    (void)arr_s;
+#define FUNC_COUNT 3
+void generate_bytecode(Function *functions, size_t functions_s) {
     FILE *file = fopen("test.beam", "wb");
     if(file == NULL) assert(0);
 
@@ -106,8 +109,8 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
         .name = "AtU8",
     };
 
-    memcpy(atom_header.size_buf, encode_big_endian(9 + (6 * FUNC_COUNT)), sizeof(word));
-    memcpy(atom_header.sub_size_buf, encode_big_endian(1 + (FUNC_COUNT)), sizeof(word));
+    memcpy(atom_header.size_buf, encode_big_endian(9 + (6 * functions_s)), sizeof(word));
+    memcpy(atom_header.sub_size_buf, encode_big_endian(1 + (functions_s)), sizeof(word));
 
     fwrite(&atom_header, sizeof(Block_Header), 1, file);
     int before = ftell(file) - 4;
@@ -117,17 +120,12 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
     fwrite(&atom_len, sizeof(byte), 1, file);
     fwrite(atom_str, sizeof(byte) * atom_len, 1, file);
 
-    char *atoms[FUNC_COUNT] = {
-        "hello",
-        "hellf",
-        "hells",
-    };
-
-    for(size_t i = 0; i < FUNC_COUNT; i++) {
-        atom_str = atoms[i];
-        atom_len = (byte)strlen(atom_str);
+    String_View atom_view;
+    for(size_t i = 0; i < functions_s; i++) {
+        atom_view = functions[i].name;
+        atom_len = (byte)atom_view.len;
         fwrite(&atom_len, sizeof(byte), 1, file);
-        fwrite(atom_str, sizeof(byte) * atom_len, 1, file);
+        fwrite(atom_view.data, sizeof(byte) * atom_len, 1, file);
     }
 
     int after = ftell(file);
@@ -143,7 +141,7 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
     };
 
     #define FUNC_SIZE 12
-    memcpy(code_header.size_buf, encode_big_endian(21 + (FUNC_COUNT * FUNC_SIZE)), sizeof(word));
+    memcpy(code_header.size_buf, encode_big_endian(21 + (functions_s * FUNC_SIZE)), sizeof(word));
     memcpy(code_header.sub_size_buf, encode_big_endian(16), sizeof(word));
 
     fwrite(&code_header, sizeof(Block_Header), 1, file);
@@ -155,15 +153,15 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
     byte inst_set[sizeof(word)]; 
     memcpy(inst_set, encode_big_endian(0), sizeof(word));
     memcpy(code_body.opcode_max, encode_big_endian(169), sizeof(word));
-    memcpy(code_body.label_count, encode_big_endian(1+(FUNC_COUNT * 2)), sizeof(word));
-    memcpy(code_body.function_count, encode_big_endian(FUNC_COUNT), sizeof(word));
+    memcpy(code_body.label_count, encode_big_endian(1+(functions_s * 2)), sizeof(word));
+    memcpy(code_body.function_count, encode_big_endian(functions_s), sizeof(word));
 
     fwrite(inst_set, sizeof(word), 1, file);
     fwrite(&code_body, sizeof(Code_Body), 1, file);
 
 
     int label_count = 1;
-    for(size_t i = 0; i < FUNC_COUNT; i++) {
+    for(size_t i = 0; i < functions_s; i++) {
         byte values = (byte)Label;
         fwrite(&values, sizeof(byte), 1, file);
         byte value = encode(0, label_count++);
@@ -185,17 +183,13 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
 
         values = (byte)Move;
         fwrite(&values, sizeof(byte), 1, file);
-        value = encode(1, 14);
+        value = encode(1, functions[i].value);
         fwrite(&value, sizeof(byte), 1, file);
         value = encode(3, 0);
         fwrite(&value, sizeof(byte), 1, file);
 
         values = (byte)Return;
         fwrite(&values, sizeof(byte), 1, file);
-        //value = encode(3, 0);
-        //fwrite(&value, sizeof(byte), 1, file);
-
-
     }
 
     byte values = (byte)3;
@@ -225,12 +219,12 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
         .name = "ExpT",
     };
 
-    memcpy(exp_t_header.size_buf, encode_big_endian((sizeof(word) * 1) + ((sizeof(word)*3)*FUNC_COUNT)), sizeof(word));
-    memcpy(exp_t_header.sub_size_buf, encode_big_endian(FUNC_COUNT), sizeof(word));
+    memcpy(exp_t_header.size_buf, encode_big_endian((sizeof(word) * 1) + ((sizeof(word)*3)*functions_s)), sizeof(word));
+    memcpy(exp_t_header.sub_size_buf, encode_big_endian(functions_s), sizeof(word));
 
     fwrite(&exp_t_header, sizeof(Block_Header), 1, file);
 
-    for(size_t i = 0; i < FUNC_COUNT; i++) {
+    for(size_t i = 0; i < functions_s; i++) {
         fwrite(encode_big_endian(i+2), sizeof(word), 1, file);
         fwrite(encode_big_endian(0), sizeof(word), 1, file);
         fwrite(encode_big_endian((i+1)*2), sizeof(word), 1, file);
@@ -250,6 +244,7 @@ void generate_bytecode(String_View *arr, size_t arr_s) {
     fclose(file);
 }
 
+
 int main(void) {
     FILE *file = fopen("hello.erc", "rb");
     if(file == NULL) assert(0);
@@ -268,15 +263,25 @@ int main(void) {
     String_View arr[ARR_S];
 
 
-    int arr_len = view_split_whitespace(contents, arr, ARR_S) - 1;
+    contents = view_trim_right(contents);
+    int arr_len = view_split_whitespace(contents, arr, ARR_S);
 
     assert(arr_len % 3 == 0 && "Incorrect syntax\n");
 
+    Function functions[arr_len/3];
+    size_t functions_len = 0;
     for(size_t i = 0; (int)i < arr_len; i++) {
-        printf(View_Print"\n", View_Arg(arr[i]));
+        Function func = {0};
+        func.name = arr[i];
+        i += 2;
+        func.value = view_to_int(arr[i]);
+        functions[functions_len++] = func;
+    }
+    for(size_t i = 0; i < functions_len; i++) {
+        printf(View_Print"%d\n", View_Arg(functions[i].name), functions[i].value);
     }
 
-    generate_bytecode(arr, arr_len);
+    generate_bytecode(functions, functions_len);
 
 }
 
