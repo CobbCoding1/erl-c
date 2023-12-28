@@ -85,11 +85,24 @@ int align_by_four(int n) {
     return 4 * ((n + 3)/4);
 }
 
-byte encode(int tag, int n) {
+typedef struct {
+    byte a;
+    byte b;
+} Encoded;
+
+Encoded encode(int tag, int n) {
     if(n < 16) {
-        return (byte)((n << 4)|tag);
+        Encoded result = {0};
+        result.a = (byte)((n << 4)|tag);
+        return result;
+    } else if(n < 0x800) {
+        //[((N bsr 3) band 2#11100000) bor Tag bor 2#00001000, N band 16#ff];
+        Encoded result = {0};
+        result.a = (byte)(((n >> 3) & 0b11100000) | tag | 0b00001000);
+        result.b = n & 0xFF;
+        return result;
     }
-    return 0;
+    return (Encoded){0};
 }
 
 #define FUNC_COUNT 3
@@ -109,7 +122,12 @@ void generate_bytecode(Function *functions, size_t functions_s) {
         .name = "AtU8",
     };
 
-    memcpy(atom_header.size_buf, encode_big_endian(9 + (6 * functions_s)), sizeof(word));
+    size_t name_sizes = 5;
+    for(size_t i = 0; i < functions_s; i++) {
+        name_sizes += functions[i].name.len + 1;
+    }
+    printf("name sizes: %zu\n", name_sizes);
+    memcpy(atom_header.size_buf, encode_big_endian(4 + (name_sizes)), sizeof(word));
     memcpy(atom_header.sub_size_buf, encode_big_endian(1 + (functions_s)), sizeof(word));
 
     fwrite(&atom_header, sizeof(Block_Header), 1, file);
@@ -141,7 +159,13 @@ void generate_bytecode(Function *functions, size_t functions_s) {
     };
 
     #define FUNC_SIZE 12
-    memcpy(code_header.size_buf, encode_big_endian(21 + (functions_s * FUNC_SIZE)), sizeof(word));
+    size_t offset = 0;
+    for(size_t i = 0; i < functions_s; i++) {
+        if(functions[i].value >= 16) {
+            offset += 1;
+        }
+    }
+    memcpy(code_header.size_buf, encode_big_endian(21 + (functions_s * FUNC_SIZE) + offset), sizeof(word));
     memcpy(code_header.sub_size_buf, encode_big_endian(16), sizeof(word));
 
     fwrite(&code_header, sizeof(Block_Header), 1, file);
@@ -159,34 +183,38 @@ void generate_bytecode(Function *functions, size_t functions_s) {
     fwrite(inst_set, sizeof(word), 1, file);
     fwrite(&code_body, sizeof(Code_Body), 1, file);
 
+    Encoded value = {0};
 
     int label_count = 1;
     for(size_t i = 0; i < functions_s; i++) {
         byte values = (byte)Label;
         fwrite(&values, sizeof(byte), 1, file);
-        byte value = encode(0, label_count++);
-        fwrite(&value, sizeof(byte), 1, file);
+        value = encode(0, label_count++);
+        fwrite(&value.a, sizeof(byte), 1, file);
 
         values = (byte)FuncInfo;
         fwrite(&values, sizeof(byte), 1, file);
         value = encode(2, 1);
-        fwrite(&value, sizeof(byte), 1, file);
+        fwrite(&value.a, sizeof(byte), 1, file);
         value = encode(2, i+2);
-        fwrite(&value, sizeof(byte), 1, file);
+        fwrite(&value.a, sizeof(byte), 1, file);
         value = encode(0, 0);
-        fwrite(&value, sizeof(byte), 1, file);
+        fwrite(&value.a, sizeof(byte), 1, file);
 
         values = (byte)Label;
         fwrite(&values, sizeof(byte), 1, file);
         value = encode(0, label_count++);
-        fwrite(&value, sizeof(byte), 1, file);
+        fwrite(&value.a, sizeof(byte), 1, file);
 
         values = (byte)Move;
         fwrite(&values, sizeof(byte), 1, file);
-        value = encode(1, functions[i].value);
-        fwrite(&value, sizeof(byte), 1, file);
+        Encoded ivalue = encode(1, functions[i].value);
+        fwrite(&ivalue.a, sizeof(byte), 1, file);
+        if(functions[i].value >= 16) {
+            fwrite(&ivalue.b, sizeof(byte), 1, file);
+        }
         value = encode(3, 0);
-        fwrite(&value, sizeof(byte), 1, file);
+        fwrite(&value.a, sizeof(byte), 1, file);
 
         values = (byte)Return;
         fwrite(&values, sizeof(byte), 1, file);
@@ -262,9 +290,12 @@ int main(void) {
     #define ARR_S 128
     String_View arr[ARR_S];
 
-
     contents = view_trim_right(contents);
     int arr_len = view_split_whitespace(contents, arr, ARR_S);
+
+    for(size_t i = 0; (int)i < arr_len; i++) {
+        printf(View_Print"\n", View_Arg(arr[i]));
+    }
 
     assert(arr_len % 3 == 0 && "Incorrect syntax\n");
 
@@ -282,6 +313,9 @@ int main(void) {
     }
 
     generate_bytecode(functions, functions_len);
+
+    Encoded val = encode(1, 16);
+    printf("%d %d\n", val.a, val.b);
 
 }
 
@@ -408,8 +442,6 @@ int main2(void) {
     fread(&nothing, sizeof(byte) * type_size, 1, file);
 
     char *header = malloc(sizeof(word));
-    fread(header, sizeof(word), 1, file);
-
     fclose(file);
     return 0;
 }
